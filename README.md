@@ -10,5 +10,5 @@
 
 # ビルドと実行例
 
-ビルド: `nix build`
-実行: `result/bin/.hello-wrapped`
+* ビルド: `nix build`
+* 実行: `result/bin/.hello-wrapped`
