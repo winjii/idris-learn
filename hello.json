@@ -1,0 +1,9 @@
+{
+  "sources": {},
+  "sorted": [],
+  "idris2": {
+    "url": "https://github.com/idris-lang/Idris2",
+    "rev": "d34cf62611808b9abcf580c0bf67ce48264f223f",
+    "sha256": "sha256-2amWuJIFFOkZJzQJpN5bRjZMFuVxS65e2pZK3Ddf4AU="
+  }
+}

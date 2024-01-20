@@ -1,0 +1,5 @@
+package hello
+version = 0.0.1
+main = Main
+executable = "hello"
+sourcedir = "src"
