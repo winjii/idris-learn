@@ -8,7 +8,11 @@
 
 * `nix develop`
 
-# ビルドと実行例
+# 開発環境の使い方
 
-* ビルド: `nix build`
-* 実行: `result/bin/.hello-wrapped`
+* ビルド: `idris2 --build`
+* 実行: `build/exec/idris-learn`
+
+# ビルド
+
+* `nix build`

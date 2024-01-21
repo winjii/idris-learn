@@ -9,26 +9,48 @@
   };
 
   outputs = { nixpkgs, flake-utils, idr2nix, ... }:
-    # let
-    #   supportedSystems = [ "x86_64-linux" ];
-    # in flake-utils.lib.eachSystem supportedSystems (system:
-    #   let
-    #     pkgs = import nixpkgs {
-    #       inherit system;
-    #     };
-    #   in {
-    #     devShells = {
-    #       default = pkgs.mkShell {
-    #         buildInputs = [ idr2nix.packages."${system}".idr2nix ];
-    #       };
-    #     };
-    #   }
-    # );
-    idr2nix.idris.single {
-      packageName = "hello";
-      sources = builtins.fromJSON (builtins.readFile ./hello.json);
-      ipkg = "hello.ipkg";
-      src = ./.;
-      idris2api = true;
-    };
+    let
+      supportedSystems = [ "x86_64-linux" ];
+    in flake-utils.lib.eachSystem supportedSystems (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+        };
+        idris2' = pkgs.idris2.overrideAttrs (attrs: {
+          postInstall =
+            ''
+              $out/bin/idris2 --install idris2api.ipkg
+            ''
+            + (attrs.postInstall or "");
+        });
+      in {
+        devShells = {
+          default = pkgs.mkShell {
+            buildInputs = with pkgs; [
+              idris2'
+              (pkgs.callPackage ./nix/idris2-lsp.nix {
+                inherit lib stdenv fetchFromGitHub;
+                idris2 = idris2';
+              })
+            ];
+            shellHook = ''
+              export IDRIS2_PREFIX=$PWD/.idris
+            '';
+          };
+        };
+        packages = {
+          default = pkgs.stdenv.mkDerivation {
+            name = "idris-learn";
+            idris2 = idris2';
+            src = ./.;
+            buildCommand = ''
+              cp -r $src/* .
+              $idris2/bin/idris2 --build
+              mkdir $out
+              cp -r build/exec $out/bin
+            '';
+          };
+        };
+      }
+    );
 }

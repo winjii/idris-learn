@@ -1,0 +1,5 @@
+package idris-learn
+version = 0.0.1
+main = Main
+executable = "idris-learn"
+sourcedir = "src"
