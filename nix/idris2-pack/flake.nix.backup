@@ -1,0 +1,237 @@
+{
+  inputs = {
+    flake-utils.url = "github:numtide/flake-utils/main";
+  };
+
+  outputs = { nixpkgs, flake-utils, ... }:
+    with builtins;
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+        original = pkgs.fetchgit {
+          url = "https://github.com/stefan-hoeck/idris2-pack.git";
+          rev = "bb0cdc067da0d8be7922e7eb016c3fccd93059cb";
+          hash = "sha256-yRpCkNRyIZc7BrX/a0S1ggZ2EIFYCxpFkWAyYYRHfs0=";
+          leaveDotGit = true;
+        };
+        idris2-pack-db = pkgs.fetchgit {
+          url = "https://github.com/stefan-hoeck/idris2-pack-db.git";
+          rev = "d592793feef4656700d174f21206b0f8b0019ca5";
+          hash = "sha256-0OF7qkT19jQ1f95Z2yKqrR+ZEMw2QSRyQgWht58KJC4=";
+          leaveDotGit = true;
+        };
+        idris2 = pkgs.fetchgit {
+          url = "https://github.com/idris-lang/Idris2.git";
+          rev = "d34cf62611808b9abcf580c0bf67ce48264f223f";
+          hash = "sha256-Nf9DrFbtijykjVaWb89KdiJ4KcSKXueExRrStJoCwmQ=";
+          leaveDotGit = true;
+        };
+        idris2-filepath = pkgs.fetchgit {
+          url = "https://github.com/stefan-hoeck/idris2-filepath.git";
+          rev = "eac02d51b631633f32330c788bcebeb24221fa09";
+          hash = "sha256-noylxQvT2h50H0xmAiwe/cI6vz5gkbOhSD7mXuhJGfU=";
+          leaveDotGit = true;
+        };
+        toml-idr = pkgs.fetchgit {
+          url = "https://github.com/cuddlefishie/toml-idr.git";
+          rev = "b4f5a4bd874fa32f20d02311a62a1910dc48123f";
+          hash = "sha256-+bqfCE6m0aJ+S65urT+zQLuZUtUkC1qcuSsefML/fAE=";
+          leaveDotGit = true;
+        };
+      in
+        with pkgs;
+        {
+          packages.default = stdenv.mkDerivation {
+            inherit idris2;
+            name = "idris2-pack";
+            idris2PackDb = idris2-pack-db;
+            idris2Pack = original;
+            idris2Filepath = idris2-filepath;
+            tomlIdr = toml-idr;
+            nativeBuildInputs = [ bash gcc gmp gnumake git chez less ];
+            buildCommand = ''
+              PACK_DIR=$PWD
+              SCHEME='scheme'
+              # TODO: 消す
+              # BOOT_PATH=$idris2/bin/idris2
+              # IDRIS2_VERSION=$($BOOT_PATH --version | sed -zr "s/[[:print:]\n]*version ([.0-9]+)[[:print:]\n]*/\1/")
+              
+              # TODO: 消す
+              # export IDRIS2_PREFIX=$PACK_DIR/.idris
+              # cp -r $idris2/idris2-$IDRIS2_VERSION $IDRIS2_PREFIX/
+              # chmod 755 -R $IDRIS2_PREFIX
+
+              mkdir "$PACK_DIR/clones"
+              mkdir $PACK_DIR/db
+              
+              cp -r $idris2PackDb "$PACK_DIR/clones/idris2-pack-db"
+              cp "$PACK_DIR/clones/idris2-pack-db/collections/"* "$PACK_DIR/db"
+
+              LATEST_DB="$(find "$PACK_DIR/db" -name 'nightly-*' | sort | tail -1)"
+              PACKAGE_COLLECTION="$(basename -s .toml "$LATEST_DB")"
+              IDRIS2_COMMIT=$(sed -ne '/^\[idris2\]/,/^commit/{/^commit/s/commit *= *"\([a-f0-9]*\)"/\1/p;}' "$PACK_DIR/db/$PACKAGE_COLLECTION.toml")
+
+
+              # Bootstrap the Idris compiler
+
+              cp -r $idris2 "$PACK_DIR/clones/Idris2"
+              chmod 755 -R "$PACK_DIR/clones/Idris2"
+              pushd "$PACK_DIR/clones/Idris2"
+              git checkout "$IDRIS2_COMMIT"
+
+              PREFIX_PATH="$PACK_DIR/install/$IDRIS2_COMMIT/idris2"
+              BOOT_PATH="$PACK_DIR/install/$IDRIS2_COMMIT/idris2/bin/idris2"
+
+              if [ "$SCHEME" = "racket" ]; then
+                CG="racket"
+                make bootstrap-racket PREFIX="$PREFIX_PATH"
+              else
+                CG="chez"
+                make bootstrap PREFIX="$PREFIX_PATH" SCHEME="$SCHEME"
+              fi
+
+              export IDRIS2_CG="$CG"
+
+              make install PREFIX="$PREFIX_PATH" IDRIS2_CG="$CG"
+              make clean
+              make all IDRIS2_BOOT="$BOOT_PATH" PREFIX="$PREFIX_PATH" IDRIS2_CG="$CG"
+              make install IDRIS2_BOOT="$BOOT_PATH" PREFIX="$PREFIX_PATH" IDRIS2_CG="$CG"
+              make install-with-src-libs IDRIS2_BOOT="$BOOT_PATH" PREFIX="$PREFIX_PATH" IDRIS2_CG="$CG"
+              make install-with-src-api IDRIS2_BOOT="$BOOT_PATH" PREFIX="$PREFIX_PATH" IDRIS2_CG="$CG"
+              popd
+
+              # Install filepath
+
+              FILEPATH_COMMIT=$(sed -ne '/^\[db.filepath\]/,/^commit/{/^commit/s/commit *= *"\([a-f0-9]*\)"/\1/p;}' "$PACK_DIR/db/$PACKAGE_COLLECTION.toml")
+              cp -r "$idris2Filepath" "$PACK_DIR/clones/idris2-filepath"
+              chmod -R 755 "$PACK_DIR/clones/idris2-filepath"
+              pushd "$PACK_DIR/clones/idris2-filepath"
+              git checkout "$FILEPATH_COMMIT"
+              "$BOOT_PATH" --install filepath.ipkg
+              popd
+
+              # Install toml-idr
+
+              TOML_COMMIT=$(sed -ne '/^\[db.toml\]/,/^commit/{/^commit/s/commit *= *"\([a-f0-9]*\)"/\1/p;}' "$PACK_DIR/db/$PACKAGE_COLLECTION.toml")
+              cp -r "$tomlIdr" "$PACK_DIR/clones/toml-idr"
+              chmod -R 755 "$PACK_DIR/clones/toml-idr"
+              pushd "$PACK_DIR/clones/toml-idr"
+              git checkout "$TOML_COMMIT"
+              "$BOOT_PATH" --install toml.ipkg
+              popd
+
+              # Install pack
+
+              cp -r "$idris2Pack" "$PACK_DIR/clones/idris2-pack"
+              chmod -R 755 "$PACK_DIR/clones/idris2-pack"
+              pushd "$PACK_DIR/clones/idris2-pack"
+              "$BOOT_PATH" --build pack.ipkg
+              mkdir -p "$PACK_DIR/bin"
+              cp -r build/exec/* "$PACK_DIR/bin"
+              popd
+
+              pushd "$PACK_DIR/bin"
+
+              cat <<EOF >>idris2
+              #!/bin/sh
+
+              APPLICATION="\$($PACK_DIR/bin/pack app-path idris2)"
+              export IDRIS2_PACKAGE_PATH="\$($PACK_DIR/bin/pack package-path)"
+              export IDRIS2_LIBS="\$($PACK_DIR/bin/pack libs-path)"
+              export IDRIS2_DATA="\$($PACK_DIR/bin/pack data-path)"
+              export IDRIS2_CG="$CG"
+              \$APPLICATION "\$@"
+              EOF
+
+              chmod +x idris2
+              popd
+
+              # Initialize `pack.toml`
+
+              mkdir -p "$PACK_DIR/user"
+              cat <<EOF >>"$PACK_DIR/user/pack.toml"
+              # The package collection to use
+              collection = "$PACKAGE_COLLECTION"
+
+              [install]
+
+              # Whether to install packages together with their
+              # sources or not. This is mainly useful for programmers
+              # who have set their editor up with some *go to definition*
+              # functionality (for instance by using idris2-lsp with neovim).
+              with-src   = true
+
+              # Whether to prompt the user before building or installing
+              # packages or applications with custom build hooks in their
+              # \`.ipkg\` file.
+              safety-prompt = true
+
+              # Must-have libraries. These will be installed automatically
+              # when using a new package collection.
+              # libs       = [ "toml", "elab-util" ]
+
+              # Must-have applications. These will be installed automatically
+              # when using a new package collection.
+              # apps       = [ "idris2-lsp" ]
+
+              [idris2]
+
+              # Whether to build Idris2 with its bootstrap compiler.
+              # Bootstrapping takes longer than building with an existing
+              # Idris2 installation, but it will work even if the existing
+              # Idris2 compiler is outdated.
+              bootstrap  = false
+
+              # Name or path to the scheme executable to use.
+              scheme      = "$SCHEME"
+
+              # Default code generator to us
+              # codegen     = "chez"
+
+              # Set this to \`true\` in order to run REPL sessions from within
+              # \`rlwrap\`. This will give you additional features such as a
+              # command history.
+              repl.rlwrap = false
+
+              # Below are some examples for custom packages
+
+              # A local package to be available with all
+              # package collections.
+              # [custom.all.chem]
+              # type = "local"
+              # path = "/data/idris/chem"
+              # ipkg = "chem.ipkg"
+
+              # A package on GitHub to be available with all
+              # package collections.
+              # [custom.all.foo]
+              # type = "github"
+              # path = "https://github.com/bar/foo"
+              # ipkg = "foo.ipkg"
+
+              # Override library \`toml\` from package collection \`nightly-220503\`
+              # by using a custom commit hash.
+              # [custom.nightly-220503.toml]
+              # type   = "github"
+              # url    = "https://github.com/cuddlefishie/toml-idr"
+              # commit = "eb7a146f565276f82ebf30cb6d5502e9f65dcc3c"
+              # ipkg   = "toml.ipkg"
+              EOF
+
+              # Cleanup
+
+              rm -rf "$PACK_DIR/clones"
+              rm -rf "$PREFIX_PATH/idris2-*/filepath-*"
+              rm -rf "$PREFIX_PATH/idris2-*/toml-*"
+
+              "$PACK_DIR/bin/pack" info
+
+
+              # copy to nix store
+              mkdir $out
+              cp -r "$PACK_DIR/bin" "$out/bin"
+            '';
+          };
+        }
+    );
+}
