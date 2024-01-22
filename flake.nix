@@ -34,7 +34,7 @@
               })
             ];
             shellHook = ''
-              export IDRIS2_PREFIX=$PWD/.idris
+              export IDRIS2_PREFIX=${idris2'}
             '';
           };
         };
